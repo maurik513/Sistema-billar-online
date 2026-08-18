@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Printer } from 'lucide-react';
 import api from '../../utils/api';
 import { useConfig } from '../../context/ConfigContext';
-import { printSessionReceipt } from '../../utils/receipt';
+import TicketModal from './TicketModal';
 import toast from 'react-hot-toast';
 
 function formatTime(ms) {
@@ -16,6 +16,7 @@ export default function CloseTableModal({ session_id, tableName, currentCost, pr
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [closed, setClosed] = useState(null);
+  const [showTicket, setShowTicket] = useState(false);
   const { config, formatCurrency } = useConfig();
 
   const handleClose = async () => {
@@ -32,12 +33,23 @@ export default function CloseTableModal({ session_id, tableName, currentCost, pr
 
   const handlePrintTicket = () => {
     if (!closed) return;
-    printSessionReceipt({
-      session: { ...closed.session, table_name: tableName },
-      items: [],
-      config,
-    });
+    setShowTicket(true);
   };
+
+  if (closed && showTicket) {
+    const s = closed.session;
+    return (
+      <TicketModal
+        title={tableName}
+        dateLabel={new Date(s.end_time || Date.now()).toLocaleString('es')}
+        rows={[{ label: 'Tiempo de juego', value: formatCurrency(s.table_cost) }]}
+        total={formatCurrency(s.total)}
+        footer={config.ticket_footer}
+        config={config}
+        onClose={() => setShowTicket(false)}
+      />
+    );
+  }
 
   if (closed) {
     const s = closed.session;
