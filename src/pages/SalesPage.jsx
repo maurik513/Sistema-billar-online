@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Minus, ShoppingCart, Printer, Search } from 'lucide-react';
 import api from '../utils/api';
 import { useConfig } from '../context/ConfigContext';
-import { printSaleReceipt } from '../utils/receipt';
+import TicketModal from '../components/modals/TicketModal';
 import toast from 'react-hot-toast';
 
 export default function SalesPage() {
@@ -11,6 +11,7 @@ export default function SalesPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [lastSale, setLastSale] = useState(null);
+  const [showTicket, setShowTicket] = useState(false);
   const { config, formatCurrency } = useConfig();
 
   useEffect(() => { api.get('/products').then(r => setProducts(r.data)); }, []);
@@ -144,7 +145,7 @@ export default function SalesPage() {
             <div className="card space-y-3 border-green-600/30">
               <div className="flex items-center justify-between">
                 <h3 className="font-medium text-green-400 text-sm">✅ Última venta</h3>
-                <button onClick={() => printSaleReceipt({ sale: lastSale.sale, items: lastSale.items, config })}
+                <button onClick={() => setShowTicket(true)}
                   className="btn-ghost p-1 text-xs gap-1">
                   <Printer size={13} /> Ticket
                 </button>
@@ -165,6 +166,21 @@ export default function SalesPage() {
           )}
         </div>
       </div>
+
+      {showTicket && lastSale && (
+        <TicketModal
+          title="Venta"
+          dateLabel={new Date(lastSale.sale.created_at || Date.now()).toLocaleString('es')}
+          rows={lastSale.items.map(i => ({
+            label: `${i.product_name} x${i.quantity}`,
+            value: formatCurrency(i.subtotal),
+          }))}
+          total={formatCurrency(lastSale.sale.total)}
+          footer={config.ticket_footer}
+          config={config}
+          onClose={() => setShowTicket(false)}
+        />
+      )}
     </div>
   );
 }
