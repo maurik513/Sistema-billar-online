@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Printer } from 'lucide-react';
+import { X, Printer, Banknote, QrCode } from 'lucide-react';
 import api from '../../utils/api';
 import { useConfig } from '../../context/ConfigContext';
 import TicketModal from './TicketModal';
@@ -14,15 +14,17 @@ function formatTime(ms) {
 
 export default function CloseTableModal({ session_id, tableName, currentCost, productsTotal, total, elapsed, onClose, onSuccess }) {
   const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState(null);
   const [loading, setLoading] = useState(false);
   const [closed, setClosed] = useState(null);
   const [showTicket, setShowTicket] = useState(false);
   const { config, formatCurrency } = useConfig();
 
   const handleClose = async () => {
+    if (!paymentMethod) return toast.error('Selecciona cómo pagó el cliente');
     setLoading(true);
     try {
-      const res = await api.post(`/sessions/close/${session_id}`, { notes });
+      const res = await api.post(`/sessions/close/${session_id}`, { notes, payment_method: paymentMethod });
       setClosed(res.data);
       toast.success(`${tableName} cerrada`);
     } catch (err) {
@@ -64,6 +66,7 @@ export default function CloseTableModal({ session_id, tableName, currentCost, pr
               <div className="flex justify-between"><span className="text-gray-400">Tiempo</span><span className="text-white">{formatTime(elapsed)}</span></div>
               <div className="flex justify-between"><span className="text-gray-400">Tiempo de juego</span><span className="text-white">{formatCurrency(s.table_cost)}</span></div>
               {s.products_total > 0 && <div className="flex justify-between"><span className="text-gray-400">Consumos</span><span className="text-yellow-400">{formatCurrency(s.products_total)}</span></div>}
+              <div className="flex justify-between"><span className="text-gray-400">Pago</span><span className="text-white capitalize">{s.payment_method}</span></div>
               <div className="flex justify-between font-bold text-base border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
                 <span className="text-white">TOTAL</span>
                 <span className="text-green-400">{formatCurrency(s.total)}</span>
@@ -98,6 +101,21 @@ export default function CloseTableModal({ session_id, tableName, currentCost, pr
             <div className="flex justify-between font-bold text-base border-t pt-2" style={{ borderColor: 'var(--color-border)' }}>
               <span>TOTAL ESTIMADO</span>
               <span className="text-green-400">{formatCurrency(total)}</span>
+            </div>
+          </div>
+          <div>
+            <label className="label">Método de pago</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setPaymentMethod('efectivo')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${paymentMethod === 'efectivo' ? 'text-black' : 'text-gray-400'}`}
+                style={paymentMethod === 'efectivo' ? { backgroundColor: 'var(--color-primary)' } : { backgroundColor: 'var(--color-surface-raised)' }}>
+                <Banknote size={15} /> Efectivo
+              </button>
+              <button type="button" onClick={() => setPaymentMethod('qr')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${paymentMethod === 'qr' ? 'text-black' : 'text-gray-400'}`}
+                style={paymentMethod === 'qr' ? { backgroundColor: 'var(--color-primary)' } : { backgroundColor: 'var(--color-surface-raised)' }}>
+                <QrCode size={15} /> QR
+              </button>
             </div>
           </div>
           <div>
