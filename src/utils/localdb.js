@@ -10,8 +10,8 @@ const DEFAULT_CONFIG = {
   name: 'Billar System',
   primary_color: '#00C853',
   secondary_color: '#1B1B1B',
-  currency_symbol: '$',
-  currency: 'USD',
+  currency_symbol: 'Bs',
+  currency: 'BOB',
   ticket_footer: 'Gracias por su visita',
   billing_mode: 'hour', // 'hour' | 'half_hour'
 };
@@ -82,6 +82,42 @@ function isWithinDays(iso, days) {
 
 function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// ============================================================
+// TURNO DE CAJA — un billar abre ~4pm y puede cerrar pasada la
+// medianoche, así que "hoy" (fecha calendario) no sirve para
+// agrupar ventas/arqueo. En su lugar, el "turno" va desde la
+// última APERTURA de caja hasta su CIERRE (o hasta ahora si sigue
+// abierto). Si nunca se usó "Abrir caja", se usa el día calendario
+// como respaldo para no romper instalaciones existentes.
+// ============================================================
+
+function currentOpenApertura() {
+  const aperturas = db.arqueos
+    .filter((a) => a.type === 'apertura')
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  if (!aperturas.length) return null;
+  const last = aperturas[0];
+  const closedAfter = db.arqueos.some(
+    (a) => a.type === 'cierre' && new Date(a.created_at) > new Date(last.created_at)
+  );
+  return closedAfter ? null : last;
+}
+
+function inShift(iso) {
+  if (!iso) return false;
+  const apertura = currentOpenApertura();
+  if (apertura) return new Date(iso) >= new Date(apertura.created_at);
+  return isToday(iso); // respaldo: nunca se abrió turno todavía
+}
+
+function inRange(iso, startIso, endIso) {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (startIso && t < new Date(startIso).getTime()) return false;
+  if (endIso && t > new Date(endIso).getTime()) return false;
+  return true;
 }
 
 class ApiError extends Error {
@@ -253,10 +289,11 @@ function removeProductFromSession(id, itemId) {
   return { products: db.session_products.filter((sp) => sp.session_id === Number(id)) };
 }
 
-function closeSession(id, { notes } = {}) {
+function closeSession(id, { notes, payment_method } = {}) {
   const session = db.sessions.find((s) => s.id === Number(id));
   if (!session || session.status !== 'open') throw new ApiError('Sesión no encontrada o ya cerrada');
   const table = db.tables.find((t) => t.id === session.table_id);
+  if (!['efectivo', 'qr'].includes(payment_method)) throw new ApiError('Selecciona el método de pago (efectivo o QR)');
 
   const start = new Date(session.start_time);
   const end = new Date();
@@ -278,6 +315,7 @@ function closeSession(id, { notes } = {}) {
   session.table_cost = tableCost;
   session.total = total;
   session.notes = notes || null;
+  session.payment_method = payment_method;
   session.status = 'closed';
   table.status = 'free';
 
@@ -285,6 +323,7 @@ function closeSession(id, { notes } = {}) {
     id: nextId(),
     type: 'session',
     amount: total,
+    payment_method,
     description: `Cierre mesa ${table.name}`,
     reference_id: session.id,
     created_at: nowISO(),
@@ -296,7 +335,7 @@ function closeSession(id, { notes } = {}) {
 
 function sessionsHistory(limit = 50) {
   return db.sessions
-    .filter((s) => s.status === 'closed' && isToday(s.end_time))
+    .filter((s) => s.status === 'closed' && inShift(s.end_time))
     .sort((a, b) => new Date(b.end_time) - new Date(a.end_time))
     .slice(0, limit)
     .map((s) => {
@@ -383,7 +422,7 @@ function addStock(id, { quantity, reason }) {
 
 function listSales(limit = 50) {
   return db.sales
-    .filter((s) => isToday(s.created_at))
+    .filter((s) => inShift(s.created_at))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit)
     .map((s) => ({
@@ -400,8 +439,9 @@ function getSale(id) {
   return { sale: { ...sale, user_name: 'Cajero' }, items };
 }
 
-function createSale({ items }) {
+function createSale({ items, payment_method }) {
   if (!items || !items.length) throw new ApiError('No hay productos en la venta');
+  if (!['efectivo', 'qr'].includes(payment_method)) throw new ApiError('Selecciona el método de pago (efectivo o QR)');
   let total = 0;
   const productData = [];
   for (const item of items) {
@@ -415,7 +455,7 @@ function createSale({ items }) {
   }
   total = round2(total);
 
-  const sale = { id: nextId(), total, created_at: nowISO() };
+  const sale = { id: nextId(), total, payment_method, created_at: nowISO() };
   db.sales.push(sale);
 
   const saleItems = [];
@@ -446,6 +486,7 @@ function createSale({ items }) {
     id: nextId(),
     type: 'sale',
     amount: total,
+    payment_method,
     description: `Venta directa #${sale.id}`,
     reference_id: sale.id,
     created_at: nowISO(),
@@ -456,12 +497,13 @@ function createSale({ items }) {
 }
 
 // ============================================================
-// CAJA (movimientos manuales de ingreso/egreso)
+// CAJA (movimientos manuales de ingreso/egreso) — siempre efectivo,
+// ya que son movimientos físicos de la caja (compras, retiros, etc.)
 // ============================================================
 
 function listCashMovements(limit = 50) {
   return db.cash_movements
-    .slice()
+    .filter((c) => inShift(c.created_at))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit)
     .map((c) => ({ ...c, user_name: 'Cajero' }));
@@ -475,6 +517,7 @@ function createCashMovement({ type, amount, description }) {
     id: nextId(),
     type,
     amount: amt,
+    payment_method: 'efectivo',
     description: description || null,
     reference_id: null,
     created_at: nowISO(),
@@ -485,14 +528,8 @@ function createCashMovement({ type, amount, description }) {
 }
 
 // ============================================================
-// ARQUEOS DE CAJA (apertura / cierre con conteo físico)
+// ARQUEOS DE CAJA (apertura / cierre de turno con conteo físico)
 // ============================================================
-
-function lastOpenArqueoToday() {
-  return db.arqueos
-    .filter((a) => a.type === 'apertura' && isToday(a.created_at))
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] || null;
-}
 
 function listArqueos(limit = 30) {
   return db.arqueos
@@ -501,11 +538,80 @@ function listArqueos(limit = 30) {
     .slice(0, limit);
 }
 
+function getArqueo(id) {
+  const a = db.arqueos.find((x) => x.id === Number(id));
+  if (!a) throw new ApiError('Arqueo no encontrado', 404);
+  return a;
+}
+
+// Arma el desglose completo (efectivo/QR, mesas, ventas, top productos)
+// de un turno, entre `startIso` (apertura, o null si nunca se abrió) y
+// `endIso` (cierre o "ahora" si el turno sigue abierto).
+function buildShiftReport(startIso, endIso, fondoInicial = 0) {
+  const closedSessions = db.sessions.filter((s) => s.status === 'closed' && inRange(s.end_time, startIso, endIso));
+  const sales = db.sales.filter((s) => inRange(s.created_at, startIso, endIso));
+  const movements = db.cash_movements.filter(
+    (c) => (c.type === 'in' || c.type === 'out') && inRange(c.created_at, startIso, endIso)
+  );
+
+  const tablesCash = round2(closedSessions.filter((s) => s.payment_method !== 'qr').reduce((s, x) => s + x.total, 0));
+  const tablesQr = round2(closedSessions.filter((s) => s.payment_method === 'qr').reduce((s, x) => s + x.total, 0));
+  const salesCash = round2(sales.filter((s) => s.payment_method !== 'qr').reduce((s, x) => s + x.total, 0));
+  const salesQr = round2(sales.filter((s) => s.payment_method === 'qr').reduce((s, x) => s + x.total, 0));
+  const cashIn = round2(movements.filter((m) => m.type === 'in').reduce((s, x) => s + x.amount, 0));
+  const cashOut = round2(movements.filter((m) => m.type === 'out').reduce((s, x) => s + x.amount, 0));
+
+  const totalEfectivo = round2(tablesCash + salesCash + cashIn - cashOut);
+  const totalQr = round2(tablesQr + salesQr);
+  const totalGeneral = round2(totalEfectivo + totalQr);
+  const expectedCash = round2(fondoInicial + totalEfectivo);
+
+  const productMap = {};
+  db.session_products
+    .filter((sp) => closedSessions.some((s) => s.id === sp.session_id))
+    .forEach((sp) => {
+      productMap[sp.product_name] = productMap[sp.product_name] || { product_name: sp.product_name, quantity: 0, revenue: 0 };
+      productMap[sp.product_name].quantity += sp.quantity;
+      productMap[sp.product_name].revenue += sp.subtotal;
+    });
+  db.sale_items
+    .filter((si) => sales.some((s) => s.id === si.sale_id))
+    .forEach((si) => {
+      productMap[si.product_name] = productMap[si.product_name] || { product_name: si.product_name, quantity: 0, revenue: 0 };
+      productMap[si.product_name].quantity += si.quantity;
+      productMap[si.product_name].revenue += si.subtotal;
+    });
+  const top_products = Object.values(productMap)
+    .map((p) => ({ ...p, revenue: round2(p.revenue) }))
+    .sort((a, b) => b.quantity - a.quantity);
+
+  return {
+    shift_start: startIso,
+    shift_end: endIso,
+    fondo_inicial: round2(fondoInicial),
+    sessions_count: closedSessions.length,
+    sales_count: sales.length,
+    tables_cash: tablesCash,
+    tables_qr: tablesQr,
+    tables_total: round2(tablesCash + tablesQr),
+    sales_cash: salesCash,
+    sales_qr: salesQr,
+    sales_total: round2(salesCash + salesQr),
+    cash_in: cashIn,
+    cash_out: cashOut,
+    total_efectivo: totalEfectivo,
+    total_qr: totalQr,
+    total_general: totalGeneral,
+    expected_cash: expectedCash,
+    top_products,
+  };
+}
+
 function expectedForCierre() {
-  const apertura = lastOpenArqueoToday();
+  const apertura = currentOpenApertura();
   const fondo = apertura ? apertura.counted_amount : 0;
-  const cs = cashSummary();
-  return round2(fondo + cs.total_income);
+  const report = buildShiftReport(apertura ? apertura.created_at : null, nowISO(), fondo);
+  return report.expected_cash;
 }
 
 function createArqueo({ type, counted_amount, notes }) {
@@ -513,18 +619,36 @@ function createArqueo({ type, counted_amount, notes }) {
   const counted = parseFloat(counted_amount);
   if (Number.isNaN(counted) || counted < 0) throw new ApiError('Monto contado inválido');
 
-  let expected = 0;
-  if (type === 'cierre') expected = expectedForCierre();
+  const openApertura = currentOpenApertura();
+  if (type === 'apertura' && openApertura) {
+    throw new ApiError('Ya hay un turno abierto. Cierra la caja actual antes de abrir un turno nuevo.');
+  }
+  if (type === 'cierre' && !openApertura) {
+    throw new ApiError('No hay un turno abierto para cerrar. Abre la caja primero.');
+  }
 
+  const createdAt = nowISO();
+  let report = null;
+
+  if (type === 'cierre') {
+    report = buildShiftReport(openApertura.created_at, createdAt, openApertura.counted_amount);
+  }
+
+  const expected = report ? report.expected_cash : null;
   const record = {
     id: nextId(),
     type,
-    expected_amount: type === 'cierre' ? expected : null,
+    expected_amount: expected,
     counted_amount: round2(counted),
     difference: type === 'cierre' ? round2(counted - expected) : null,
     notes: notes || null,
-    created_at: nowISO(),
+    created_at: createdAt,
   };
+
+  if (report) {
+    record.report = { ...report, counted_cash: record.counted_amount, difference: record.difference };
+  }
+
   db.arqueos.push(record);
   persist();
   return record;
@@ -552,23 +676,22 @@ function stats() {
 }
 
 function cashSummary() {
-  const tablesIncome = db.sessions
-    .filter((s) => s.status === 'closed' && isToday(s.end_time))
-    .reduce((sum, s) => sum + s.total, 0);
-  const salesIncome = db.sales.filter((s) => isToday(s.created_at)).reduce((sum, s) => sum + s.total, 0);
-  const cashIn = db.cash_movements
-    .filter((c) => c.type === 'in' && isToday(c.created_at))
-    .reduce((sum, c) => sum + c.amount, 0);
-  const cashOut = db.cash_movements
-    .filter((c) => c.type === 'out' && isToday(c.created_at))
-    .reduce((sum, c) => sum + c.amount, 0);
+  const apertura = currentOpenApertura();
+  const startIso = apertura ? apertura.created_at : null;
+  const fondo = apertura ? apertura.counted_amount : 0;
+  const report = buildShiftReport(startIso, nowISO(), fondo);
 
   return {
-    tables_income: round2(tablesIncome),
-    sales_income: round2(salesIncome),
-    cash_in: round2(cashIn),
-    cash_out: round2(cashOut),
-    total_income: round2(tablesIncome + salesIncome + cashIn - cashOut),
+    shift_open: !!apertura,
+    shift_start: startIso,
+    fondo_inicial: report.fondo_inicial,
+    tables_income: report.tables_total,
+    sales_income: report.sales_total,
+    cash_in: report.cash_in,
+    cash_out: report.cash_out,
+    total_efectivo: report.total_efectivo,
+    total_qr: report.total_qr,
+    total_income: report.total_general,
   };
 }
 
@@ -671,7 +794,7 @@ export {
   listProducts, createProduct, updateProduct, deleteProduct, addStock,
   listSales, getSale, createSale,
   listCashMovements, createCashMovement,
-  listArqueos, createArqueo, expectedForCierre, lastOpenArqueoToday,
+  listArqueos, getArqueo, createArqueo, expectedForCierre, currentOpenApertura,
   stats, cashSummary, income, topProducts,
   getConfig, updateConfig,
   exportBackup, importBackup, wipeAll,
