@@ -19,11 +19,24 @@
 // ============================================================
 
 const STORAGE_KEY = 'billar_license_v1';
+const DEVICE_ID_KEY = 'billar_device_id_v1';
 
 // Cambiá esto por la URL real una vez publicado. Al ser ruta relativa
 // ('/api/validate-license'), funciona automáticamente en cualquier
 // dominio de Vercel donde publiques la app, sin tocar código.
 const VALIDATE_URL = '/api/validate-license';
+
+// Identificador único de ESTE dispositivo/instalación. Se genera una
+// sola vez y se guarda localmente — es lo que el servidor usa para
+// "recordar" a qué celular pertenece cada clave.
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
 
 function load() {
   try {
@@ -56,12 +69,15 @@ export async function activateLicense(key) {
     const res = await fetch(VALIDATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
+      body: JSON.stringify({ key, deviceId: getDeviceId() }),
     });
     const data = await res.json();
     if (data.valid) {
       save({ valid: true, key, client: data.client, expiresAt: data.expiresAt, lastCheck: Date.now() });
       return { ok: true, client: data.client };
+    }
+    if (data.reason === 'device_mismatch') {
+      return { ok: false, error: 'Esta clave ya está activada en otro dispositivo. Contactá a quien te la entregó.' };
     }
     return { ok: false, error: 'Clave inválida. Verificá que esté bien escrita.' };
   } catch (err) {
@@ -81,7 +97,7 @@ export async function silentRevalidate() {
     const res = await fetch(VALIDATE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: lic.key }),
+      body: JSON.stringify({ key: lic.key, deviceId: getDeviceId() }),
     });
     const data = await res.json();
     if (data.valid) {

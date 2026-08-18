@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ConfigProvider } from './context/ConfigContext';
 import { SocketProvider } from './context/SocketContext';
 import LicenseGate from './components/LicenseGate';
+import SplashScreen, { shouldShowSplash } from './components/SplashScreen';
 import Layout from './components/layout/Layout';
 import DashboardPage from './pages/DashboardPage';
 import TablesPage from './pages/TablesPage';
@@ -29,6 +31,12 @@ function AppRoutes() {
 }
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(shouldShowSplash);
+
+  if (showSplash) {
+    return <SplashScreen onDone={() => setShowSplash(false)} />;
+  }
+
   return (
     // HashRouter: funciona abriendo el archivo/app sin un servidor
     // que reescriba rutas (imprescindible para uso 100% local/offline).
