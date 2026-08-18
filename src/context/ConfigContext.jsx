@@ -8,8 +8,8 @@ export function ConfigProvider({ children }) {
     name: 'Billar System',
     primary_color: '#00C853',
     secondary_color: '#1B1B1B',
-    currency_symbol: '$',
-    currency: 'USD',
+    currency_symbol: 'Bs',
+    currency: 'BOB',
     ticket_footer: 'Gracias por su visita',
     billing_mode: 'hour'
   });
@@ -35,7 +35,9 @@ export function ConfigProvider({ children }) {
   };
 
   const formatCurrency = (amount) => {
-    return `${config.currency_symbol}${parseFloat(amount || 0).toFixed(2)}`;
+    const symbol = config.currency_symbol || '$';
+    const sep = symbol.length > 1 ? ' ' : '';
+    return `${symbol}${sep}${parseFloat(amount || 0).toFixed(2)}`;
   };
 
   return (
