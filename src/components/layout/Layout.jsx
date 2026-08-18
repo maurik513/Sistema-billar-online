@@ -77,15 +77,29 @@ export default function Layout() {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 flex flex-col" style={{ backgroundColor: 'var(--color-surface)' }}>
+          <aside
+            className="absolute left-0 top-0 bottom-0 w-64 flex flex-col"
+            style={{ backgroundColor: 'var(--color-surface)', paddingTop: 'env(safe-area-inset-top, 0px)' }}
+          >
             <SidebarContent />
           </aside>
         </div>
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 border-b shrink-0" style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-          <button onClick={() => setSidebarOpen(true)} className="p-1 rounded text-gray-400 hover:text-white">
+        <header
+          className="md:hidden flex items-center gap-3 px-4 pb-3 border-b shrink-0"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            borderColor: 'var(--color-border)',
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+          }}
+        >
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="-m-2 p-2 rounded text-gray-400 hover:text-white active:bg-white/10"
+            aria-label="Abrir menú"
+          >
             <Menu size={22} />
           </button>
           <span className="font-semibold text-white">{config.name}</span>
