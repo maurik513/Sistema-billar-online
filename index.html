@@ -17,8 +17,9 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
   <!--
-    No hay backend ni dominios externos a los que llamar: todo vive en
-    este mismo origen y en localStorage del navegador.
+    Ya no está 100% aislada: la app llama UNA función propia
+    (/api/validate-license, en el mismo dominio) solo para activar o
+    revalidar la licencia. El resto sigue funcionando local, sin red.
   -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'" />
 </head>

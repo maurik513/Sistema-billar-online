@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ConfigProvider } from './context/ConfigContext';
 import { SocketProvider } from './context/SocketContext';
+import LicenseGate from './components/LicenseGate';
 import Layout from './components/layout/Layout';
 import DashboardPage from './pages/DashboardPage';
 import TablesPage from './pages/TablesPage';
@@ -32,19 +33,21 @@ export default function App() {
     // HashRouter: funciona abriendo el archivo/app sin un servidor
     // que reescriba rutas (imprescindible para uso 100% local/offline).
     <HashRouter>
-      <ConfigProvider>
-        <SocketProvider>
-          <AppRoutes />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              style: { background: '#2A2A2A', color: '#F5F5F5', border: '1px solid #333' },
-              success: { iconTheme: { primary: '#00C853', secondary: '#000' } },
-              error: { iconTheme: { primary: '#F44336', secondary: '#fff' } }
-            }}
-          />
-        </SocketProvider>
-      </ConfigProvider>
+      <LicenseGate>
+        <ConfigProvider>
+          <SocketProvider>
+            <AppRoutes />
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                style: { background: '#2A2A2A', color: '#F5F5F5', border: '1px solid #333' },
+                success: { iconTheme: { primary: '#00C853', secondary: '#000' } },
+                error: { iconTheme: { primary: '#F44336', secondary: '#fff' } }
+              }}
+            />
+          </SocketProvider>
+        </ConfigProvider>
+      </LicenseGate>
     </HashRouter>
   );
 }
