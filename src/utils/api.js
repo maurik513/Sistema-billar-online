@@ -44,6 +44,9 @@ const routes = {
     if (path === '/reports/top-products') return run(() => localdb.topProducts());
     if (path === '/reports/arqueo-esperado') return run(() => ({ expected: localdb.expectedForCierre() }));
 
+    const arqueoMatch = path.match(/^\/arqueos\/(\d+)$/);
+    if (arqueoMatch) return run(() => localdb.getArqueo(arqueoMatch[1]));
+
     const sessionMatch = path.match(/^\/sessions\/(\d+)$/);
     if (sessionMatch) return run(() => localdb.getSession(sessionMatch[1]));
 
