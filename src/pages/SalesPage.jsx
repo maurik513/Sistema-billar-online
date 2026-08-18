@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Minus, ShoppingCart, Printer, Search } from 'lucide-react';
+import { Plus, Minus, ShoppingCart, Printer, Search, Banknote, QrCode } from 'lucide-react';
 import api from '../utils/api';
 import { useConfig } from '../context/ConfigContext';
 import TicketModal from '../components/modals/TicketModal';
@@ -12,6 +12,7 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [showTicket, setShowTicket] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState(null);
   const { config, formatCurrency } = useConfig();
 
   useEffect(() => { api.get('/products').then(r => setProducts(r.data)); }, []);
@@ -39,13 +40,16 @@ export default function SalesPage() {
 
   const handleSale = async () => {
     if (!cartItems.length) return toast.error('Carrito vacío');
+    if (!paymentMethod) return toast.error('Selecciona cómo pagó el cliente');
     setLoading(true);
     try {
       const res = await api.post('/sales', {
-        items: cartItems.map(i => ({ product_id: i.id, quantity: i.qty }))
+        items: cartItems.map(i => ({ product_id: i.id, quantity: i.qty })),
+        payment_method: paymentMethod,
       });
       setLastSale(res.data);
       setCart({});
+      setPaymentMethod(null);
       toast.success('Venta registrada');
       api.get('/products').then(r => setProducts(r.data));
     } catch (err) {
@@ -134,6 +138,18 @@ export default function SalesPage() {
                     <span className="text-green-400">{formatCurrency(total)}</span>
                   </div>
                 </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setPaymentMethod('efectivo')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${paymentMethod === 'efectivo' ? 'text-black' : 'text-gray-400'}`}
+                    style={paymentMethod === 'efectivo' ? { backgroundColor: 'var(--color-primary)' } : { backgroundColor: 'var(--color-surface-raised)' }}>
+                    <Banknote size={15} /> Efectivo
+                  </button>
+                  <button type="button" onClick={() => setPaymentMethod('qr')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 ${paymentMethod === 'qr' ? 'text-black' : 'text-gray-400'}`}
+                    style={paymentMethod === 'qr' ? { backgroundColor: 'var(--color-primary)' } : { backgroundColor: 'var(--color-surface-raised)' }}>
+                    <QrCode size={15} /> QR
+                  </button>
+                </div>
                 <button onClick={handleSale} disabled={loading} className="btn-primary w-full justify-center">
                   {loading ? 'Procesando...' : 'Cobrar'}
                 </button>
@@ -162,6 +178,7 @@ export default function SalesPage() {
                 <span className="text-white">Total</span>
                 <span className="text-green-400">{formatCurrency(lastSale.sale.total)}</span>
               </div>
+              <div className="text-xs text-gray-400 capitalize">Pago: {lastSale.sale.payment_method}</div>
             </div>
           )}
         </div>
