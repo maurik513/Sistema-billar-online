@@ -125,8 +125,9 @@ body {
   .no-print { display: none !important; }
 
   body * { visibility: hidden; }
-  .ticket-print-area, .ticket-print-area * { visibility: visible; }
-  .ticket-print-area {
+  .ticket-print-area, .ticket-print-area *,
+  .print-area, .print-area * { visibility: visible; }
+  .ticket-print-area, .print-area {
     position: absolute;
     top: 0;
     left: 0;
